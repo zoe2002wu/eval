@@ -36,6 +36,7 @@ def image_loader(image_name):
     return image.to(torch.float)
 
 
+
 def generate_coco_30k(
         pipe: StableDiffusionPipeline, 
         penalty_param,
@@ -43,10 +44,21 @@ def generate_coco_30k(
         sample_num,
         file_path=DATA_DIR / "coco" / "coco_30k.csv",
         out_dir="data/coco/images/sd_orig",
-        random_order=True
+        random_order=True,
+        batch_size=8 # Add batch size parameter
         ):
     """
-    Generate coco-30k images using the given pipeline.
+    Generate coco-30k images using the given pipeline with batching support.
+    
+    Args:
+        pipe: StableDiffusionPipeline instance
+        penalty_param: Penalty parameter for Riemannian guidance
+        riemann: Whether to use Riemannian guidance
+        sample_num: Number of samples per prompt
+        file_path: Path to COCO CSV file
+        out_dir: Output directory for generated images
+        random_order: Whether to shuffle the data
+        batch_size: Number of images to generate in each batch (default: 4)
     """
     print("Loading data...")
     data = pd.read_csv(file_path)
@@ -57,18 +69,59 @@ def generate_coco_30k(
         data = data.sample(frac=1).reset_index(drop=True)
 
     # generate images using the pipeline
-    print("Generating images...")
-    for i, row in tqdm(data.iterrows(), total=len(data)):
-        generator = torch.Generator(device=pipe.device).manual_seed(int(row["evaluation_seed"]))
-        for sample_idx in range(sample_num):
-            if os.path.exists(os.path.join(out_dir, f"{row['coco_id']}_{sample_idx}.png")):
+    print(f"Generating images with batch size {batch_size}...")
+    
+    if batch_size == 1:
+        # Original single image generation
+        for i, row in tqdm(data.iterrows(), total=len(data)):
+            generator = torch.Generator(device=pipe.device).manual_seed(int(row["evaluation_seed"]))
+            for sample_idx in range(sample_num):
+                if os.path.exists(os.path.join(out_dir, f"{row['coco_id']}_{sample_idx}.png")):
+                    continue
+                # get the caption
+                prompt = row["prompt"]
+                # generate the image
+                img = pipe([prompt], riemann=riemann, penalty_param=penalty_param).images[0]
+                # save the image
+                img.save(os.path.join(out_dir, f"{row['coco_id']}_{sample_idx}.png"))
+    else:
+        # Batch generation - much more efficient
+        for i in tqdm(range(0, len(data), batch_size)):
+            batch_data = data.iloc[i:i+batch_size]
+            
+            # Prepare batch prompts and metadata
+            batch_prompts = []
+            batch_info = []  # Store (coco_id, sample_idx, seed) for each image
+            
+            for _, row in batch_data.iterrows():
+                for sample_idx in range(sample_num):
+                    if os.path.exists(os.path.join(out_dir, f"{row['coco_id']}_{sample_idx}.png")):
+                        continue
+                    
+                    batch_prompts.append(row["prompt"])
+                    batch_info.append((row['coco_id'], sample_idx, int(row["evaluation_seed"])))
+            
+            if not batch_prompts:  # All images already exist
                 continue
-            # get the caption
-            prompt = row["prompt"]
-            # generate the image
-            img = pipe([prompt], riemann = riemann, penalty_param = penalty_param).images[0]
-            # save the image
-            img.save(os.path.join(out_dir, f"{row['coco_id']}_{sample_idx}.png"))
+                
+            # Generate batch of images
+            # Note: For batch generation with different seeds, we'll use the first seed
+            # You might want to modify this if you need different seeds per image
+            generator = torch.Generator(device=pipe.device)
+            generator.manual_seed(batch_info[0][2])  # Use first seed
+            
+            # Generate images in batch - much faster!
+            images = pipe(
+                batch_prompts, 
+                riemann=riemann, 
+                penalty_param=penalty_param,
+                generator=generator
+            ).images
+            
+            # Save each image
+            for img, (coco_id, sample_idx, seed) in zip(images, batch_info):
+                img.save(os.path.join(out_dir, f"{coco_id}_{sample_idx}.png"))
+                # print(f"Saved: {coco_id}_{sample_idx}.png")
 
 
 def cal_lpips_coco(
