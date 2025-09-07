@@ -45,7 +45,8 @@ def generate_coco_30k(
         file_path=DATA_DIR / "coco" / "coco_30k.csv",
         out_dir="data/coco/images/sd_orig",
         random_order=True,
-        batch_size=8 # Add batch size parameter
+        batch_size=8, # Add batch size parameter
+        resolution = 256
         ):
     """
     Generate coco-30k images using the given pipeline with batching support.
@@ -81,7 +82,7 @@ def generate_coco_30k(
                 # get the caption
                 prompt = row["prompt"]
                 # generate the image
-                img = pipe([prompt], riemann=riemann, penalty_param=penalty_param).images[0]
+                img = pipe([prompt], riemann=riemann, penalty_param=penalty_param, width=resolution, height=resolution).images[0]
                 # save the image
                 img.save(os.path.join(out_dir, f"{row['coco_id']}_{sample_idx}.png"))
     else:
