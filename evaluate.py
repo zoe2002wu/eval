@@ -39,6 +39,7 @@ def image_loader(image_name):
 def generate_coco_30k(
         pipe: StableDiffusionPipeline, 
         penalty_param,
+        riemann,
         sample_num,
         file_path=DATA_DIR / "coco" / "coco_30k.csv",
         out_dir="data/coco/images/sd_orig",
@@ -65,7 +66,7 @@ def generate_coco_30k(
             # get the caption
             prompt = row["prompt"]
             # generate the image
-            img = pipe([prompt], riemann = True, penalty_param = penalty_param).images[0]
+            img = pipe([prompt], riemann = riemann, penalty_param = penalty_param).images[0]
             # save the image
             img.save(os.path.join(out_dir, f"{row['coco_id']}_{sample_idx}.png"))
 
